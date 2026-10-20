@@ -12,11 +12,13 @@ import "./vesktopProtocol";
 
 import { app, BrowserWindow, nativeTheme } from "electron";
 
+// eslint-disable-next-line no-duplicate-imports
+import { CommandLine } from "./cli";
 import { DATA_DIR } from "./constants";
 import { createFirstLaunchTour } from "./firstLaunch";
 import { createWindows, mainWin } from "./mainWindow";
 import { registerMediaPermissionsHandler } from "./mediaPermissions";
-import { startRpcServer } from "./rpcServer";
+import { runAction, startRpcServer } from "./rpcServer";
 import { registerScreenShareHandler } from "./screenShare";
 import { Settings, State } from "./settings";
 import { setAsDefaultProtocolClient } from "./utils/setAsDefaultProtocolClient";
@@ -30,6 +32,12 @@ process.env.VENCORD_USER_DATA_DIR = DATA_DIR;
 const isLinux = process.platform === "linux";
 
 export let enableHardwareAcceleration = true;
+
+function runShortcutAction(action: unknown) {
+    if (typeof action !== "string" || !action) return;
+
+    void runAction(action).catch(err => console.error("[vesktop-rpc] run-shortcut failed:", err));
+}
 
 function init() {
     setAsDefaultProtocolClient("discord");
@@ -93,8 +101,11 @@ function init() {
     if (isDeckGameMode) nativeTheme.themeSource = "dark";
 
     app.on("second-instance", (_event, _cmdLine, _cwd, data: any) => {
-        if (data.IS_DEV) app.quit();
-        else if (mainWin) {
+        if (data.IS_DEV) {
+            app.quit();
+        } else if (data.args?.values["run-shortcut"]) {
+            runShortcutAction(data.args.values["run-shortcut"]);
+        } else if (mainWin) {
             if (mainWin.isMinimized()) mainWin.restore();
             if (!mainWin.isVisible()) mainWin.show();
             mainWin.focus();
@@ -107,6 +118,7 @@ function init() {
         registerScreenShareHandler();
         registerMediaPermissionsHandler();
         startRpcServer();
+        runShortcutAction(CommandLine.values["run-shortcut"]);
 
         bootstrap();
 
@@ -116,7 +128,7 @@ function init() {
     });
 }
 
-if (!app.requestSingleInstanceLock({ IS_DEV })) {
+if (!app.requestSingleInstanceLock({ IS_DEV, args: CommandLine })) {
     if (IS_DEV) {
         console.log("Vesktop is already running. Quitting previous instance...");
         init();

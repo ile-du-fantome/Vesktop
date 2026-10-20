@@ -46,6 +46,11 @@ const options = {
     repair: {
         type: "boolean",
         description: "Repair the application by re-downloading the latest Vencord files"
+    },
+    "run-shortcut": {
+        type: "string",
+        argumentName: "action",
+        description: "Run a control action in Vesktop (e.g. toggleMute)"
     }
 } satisfies Record<string, Option>;
 
