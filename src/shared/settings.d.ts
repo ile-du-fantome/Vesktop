@@ -27,6 +27,9 @@ export interface Settings {
     hardwareVideoAcceleration: boolean;
     hardwareVideoEncoding: boolean;
     arRPC: boolean;
+    // Whether to listen on ${XDG_RUNTIME_DIR}/vesktop-ipc.sock for external
+    // push-to-talk/mute commands (see src/main/rpcServer.ts). Default true.
+    rpcSocketEnabled?: boolean;
     appBadge: boolean;
     enableTaskbarFlashing: boolean;
     disableMinSize: boolean;
@@ -68,6 +71,11 @@ export interface State {
     linuxAutoStartEnabled?: boolean;
 
     vencordDir?: string;
+
+    // Manual override for the PTT key used by the RPC socket's ptt-down/up
+    // commands (set via `ptt-key ...`), used when Discord's keybind cannot be
+    // auto-detected. See src/main/rpcServer.ts.
+    pttKeyOverride?: { keyCode: string; modifiers: string[]; } | null;
 
     updater?: {
         ignoredVersion?: string;

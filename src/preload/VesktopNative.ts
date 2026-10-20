@@ -108,6 +108,10 @@ export const VesktopNative = {
         send: (id: string, json: string) => invoke<void>(IpcEvents.RPC_SEND, id, json),
         close: (id: string, code: number, message?: string) => invoke<void>(IpcEvents.RPC_CLOSE, id, code, message)
     },
+    ptt: {
+        reportShortcut: (shortcut: { keyCode: string; modifiers: string[] } | null) =>
+            invoke<void>(IpcEvents.SET_PTT_KEY, shortcut)
+    },
     commands: {
         onCommand(cb: (message: IpcMessage) => void) {
             ipcRenderer.on(IpcEvents.IPC_COMMAND, (_, message) => cb(message));

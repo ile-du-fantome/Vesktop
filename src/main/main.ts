@@ -16,6 +16,7 @@ import { DATA_DIR } from "./constants";
 import { createFirstLaunchTour } from "./firstLaunch";
 import { createWindows, mainWin, openDeepLink } from "./mainWindow";
 import { registerMediaPermissionsHandler } from "./mediaPermissions";
+import { startRpcServer } from "./rpcServer";
 import { registerScreenShareHandler } from "./screenShare";
 import { Settings, State } from "./settings";
 import { setAsDefaultProtocolClient } from "./utils/setAsDefaultProtocolClient";
@@ -111,6 +112,7 @@ function init() {
 
         registerScreenShareHandler();
         registerMediaPermissionsHandler();
+        startRpcServer();
 
         bootstrap();
 
