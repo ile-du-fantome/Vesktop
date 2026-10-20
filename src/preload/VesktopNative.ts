@@ -103,6 +103,10 @@ export const VesktopNative = {
         launchGpu: () => invoke<void>(IpcEvents.DEBUG_LAUNCH_GPU),
         launchWebrtcInternals: () => invoke<void>(IpcEvents.DEBUG_LAUNCH_WEBRTC_INTERNALS)
     },
+    ptt: {
+        reportShortcut: (shortcut: { keyCode: string; modifiers: string[]; } | null) =>
+            invoke<void>(IpcEvents.SET_PTT_KEY, shortcut)
+    },
     commands: {
         onCommand(cb: (message: IpcMessage) => void) {
             ipcRenderer.on(IpcEvents.IPC_COMMAND, (_, message) => cb(message));

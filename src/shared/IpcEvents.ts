@@ -62,7 +62,9 @@ export const enum IpcEvents {
     DEVTOOLS_OPENED = "VCD_DEVTOOLS_OPENED",
     DEVTOOLS_CLOSED = "VCD_DEVTOOLS_CLOSED",
 
-    CHOOSE_USER_ASSET = "VCD_CHOOSE_USER_ASSET"
+    CHOOSE_USER_ASSET = "VCD_CHOOSE_USER_ASSET",
+
+    SET_PTT_KEY = "VCD_SET_PTT_KEY"
 }
 
 export const enum UpdaterIpcEvents {
@@ -83,5 +85,9 @@ export const enum IpcCommands {
 
     GET_LANGUAGES = "navigator.languages",
 
-    SCREEN_SHARE_PICKER = "screenshare:picker"
+    SCREEN_SHARE_PICKER = "screenshare:picker",
+
+    SELF_MUTE = "voice:self-mute",
+    PTT = "voice:ptt",
+    PTT_DEBUG = "voice:debug"
 }
