@@ -9,40 +9,50 @@ import { chmodSync, rmSync } from "fs";
 import { createServer, Server } from "net";
 import { tmpdir } from "os";
 import { join } from "path";
-
 import { IpcCommands, IpcEvents } from "shared/IpcEvents";
 
+import { appReady } from "./events";
 import { sendRendererCommand } from "./ipcCommands";
 import { mainWin } from "./mainWindow";
 import { Settings, State } from "./settings";
 import { handle } from "./utils/ipcWrappers";
 
 /**
- * External control socket for push-to-talk and (self-)mute actions.
+ * External control socket for push-to-talk, mute, and other actions.
  *
- * Listens on a Unix domain socket (${XDG_RUNTIME_DIR}/vesktop-ipc.sock) so
- * that compositor keybinds and scripts can drive Discord's voice features
- * without focusing the Vesktop window:
+ * Listens on a Unix domain socket (${XDG_RUNTIME_DIR}/vesktop.sock) so that
+ * compositor keybinds and scripts can drive Discord's voice features without
+ * focusing the Vesktop window:
  *
- *   echo ptt-down | nc -U "$XDG_RUNTIME_DIR/vesktop-ipc.sock"
+ *   echo 'run-shortcut:pushToTalkKeyStart' | nc -N -U "$XDG_RUNTIME_DIR/vesktop.sock"
  *
- * (add -N for fire-and-forget clients that should not wait for the response)
+ * Actions (run-shortcut:<action>, newline separated, one "ok"/"err: ..."
+ * response per command):
+ *   pushToTalkKeyStart / pushToTalkKeyStop
+ *                                synthesize a trusted keyDown/keyUp of the PTT
+ *                                key Discord is configured with (reported by
+ *                                the renderer), driving Discord's own
+ *                                push-to-talk handling
+ *   pushToTalkNormalStart / pushToTalkNormalStop / pushToTalkNormalToggle
+ *                                invoke Discord's global PTT keybind action
+ *                                directly, without synthesizing a key
+ *   pushToTalkForceStart / pushToTalkForceStop
+ *                                engine-level PTT via the media engine's
+ *                                setForceAudioInput (experimental, does not
+ *                                depend on keybind configuration)
+ *   mute / unmute / toggleMute   Self-mute
+ *   toggleDeafen                 Self-deafen
+ *   toggleStreamerMode           toggle streamer mode
+ *   disconnectFromVoiceChannel   disconnect from current voice channel
  *
- * Commands (newline separated, one "ok"/"err: ..." response per line):
+ * Other commands:
  *   ping                         -> "pong"
- *   help                         -> list of commands
- *   ptt-down / ptt-up            -> synthesize a trusted keyDown/keyUp of the
- *                                   PTT key Discord is configured with
- *                                   (reported by the renderer), driving
- *                                   Discord's own push-to-talk handling
+ *   help                         -> list commands and actions
  *   ptt-key [mod+...]<keyCode>   -> manually override the PTT key used by
- *                                   ptt-down/ptt-up (e.g. "F13",
- *                                   "control+shift+alt+p"); with no argument,
+ *                                   pushToTalkKeyStart/Stop (e.g. "F13",
+ *                                   "control+shift+alt+p"). Without an argument,
  *                                   report the currently cached key
- *   ptt-force-down/-up           -> engine-level PTT via the media engine's
- *                                   setForceAudioInput (experimental; does
- *                                   not depend on keybind configuration)
- *   mute / unmute / toggle-mute  -> Discord self-mute (in-app, not PipeWire)
+ *   ptt-debug                    -> renderer diagnostics JSON
  */
 
 interface PttShortcut {
@@ -53,17 +63,37 @@ interface PttShortcut {
 }
 
 /**
- * The PTT key ptt-down/ptt-up synthesize. Normally reported by the renderer
- * (which reads Discord's configured keybind); a manual `ptt-key` override is
- * persisted in State.store.pttKeyOverride and takes precedence over the
- * renderer's reports.
+ * The PTT key pushToTalkKeyStart/Stop synthesize. Normally reported by the
+ * renderer (which reads Discord's configured keybind). A manual `ptt-key`
+ * override is persisted in State.store.pttKeyOverride and takes precedence
+ * over the renderer's reports.
  */
 let pttShortcut: PttShortcut | null = State.store.pttKeyOverride ?? null;
 
 let server: Server | null = null;
 
+const ACTIONS = [
+    "pushToTalkKeyStart",
+    "pushToTalkKeyStop",
+    "pushToTalkNormalStart",
+    "pushToTalkNormalStop",
+    "pushToTalkNormalToggle",
+    "pushToTalkForceStart",
+    "pushToTalkForceStop",
+    "mute",
+    "unmute",
+    "toggleMute",
+    "toggleDeafen",
+    "toggleStreamerMode",
+    "disconnectFromVoiceChannel"
+] as const;
+
+type Action = (typeof ACTIONS)[number];
+
+const ACTION_NAMES = new Set<string>(ACTIONS);
+
 export function getRpcSocketPath() {
-    return join(process.env.XDG_RUNTIME_DIR || tmpdir(), "vesktop-ipc.sock");
+    return join(process.env.XDG_RUNTIME_DIR || tmpdir(), "vesktop.sock");
 }
 
 handle(IpcEvents.SET_PTT_KEY, (_e, shortcut: PttShortcut | null) => {
@@ -76,11 +106,13 @@ handle(IpcEvents.SET_PTT_KEY, (_e, shortcut: PttShortcut | null) => {
     );
 });
 
-function sendPttKey(down: boolean) {
+async function sendPttKey(down: boolean) {
+    await appReady;
+
     if (!pttShortcut)
         throw new Error(
             "Discord's push-to-talk keybind is not known. Configure a push-to-talk keybind in " +
-            "Discord's settings, or set one manually with the `ptt-key` command."
+                "Discord's settings, or set one manually with the `ptt-key` command."
         );
     if (!mainWin || mainWin.isDestroyed()) throw new Error("main window is not available");
 
@@ -91,27 +123,67 @@ function sendPttKey(down: boolean) {
     });
 }
 
+async function runAction(action: string): Promise<void> {
+    if (!ACTION_NAMES.has(action)) throw new Error(`unknown action: ${action}`);
+
+    await appReady;
+
+    switch (action as Action) {
+        case "pushToTalkKeyStart":
+            return sendPttKey(true);
+        case "pushToTalkKeyStop":
+            return sendPttKey(false);
+        case "pushToTalkForceStart":
+            await sendRendererCommand(IpcCommands.PTT, { active: true });
+            return;
+        case "pushToTalkForceStop":
+            await sendRendererCommand(IpcCommands.PTT, { active: false });
+            return;
+        case "mute":
+            await sendRendererCommand(IpcCommands.SELF_MUTE, { muted: true });
+            return;
+        case "unmute":
+            await sendRendererCommand(IpcCommands.SELF_MUTE, { muted: false });
+            return;
+        case "toggleMute":
+            await sendRendererCommand(IpcCommands.SELF_MUTE, {});
+            return;
+        default:
+            // Everything else is handled by Discord's global keybind action
+            // registry in the renderer.
+            await sendRendererCommand(IpcCommands.KEY_BINDS_HANDLE, action);
+    }
+}
+
 async function runCommand(line: string): Promise<string> {
+    const separator = line.indexOf(":");
+    if (separator > 0 && line.slice(0, separator) === "run-shortcut") {
+        const action = line.slice(separator + 1).trim();
+        if (!action) throw new Error("usage: run-shortcut:<action>");
+        await runAction(action);
+        return "ok";
+    }
+
     const [command, ...args] = line.split(/\s+/);
 
     switch (command) {
         case "ping":
             return "pong";
         case "help":
-            return "commands: ping, help, ptt-down, ptt-up, ptt-key <keyCode>, " +
-                "ptt-force-down, ptt-force-up, mute, unmute, toggle-mute";
-        case "ptt-down":
-            sendPttKey(true);
-            return "ok";
-        case "ptt-up":
-            sendPttKey(false);
-            return "ok";
+            return (
+                "commands: ping, help, ptt-key [modifier+...]<keyCode>|auto|clear, ptt-debug; " +
+                "actions: run-shortcut:<" +
+                [...ACTION_NAMES].join("|") +
+                ">"
+            );
         case "ptt-key": {
             const arg = args.join(" ").trim();
             if (!arg)
-                return "current push-to-talk key: " +
+                return (
+                    "current push-to-talk key: " +
                     (pttShortcut ? [...pttShortcut.modifiers, pttShortcut.keyCode].join("+") : "(none)") +
-                    (State.store.pttKeyOverride != null ? " (manual override)" : "");
+                    (State.store.pttKeyOverride != null ? " (manual override)" : "")
+                );
 
             // "ptt-key auto" / "ptt-key clear": drop the manual override and
             // go back to the keybind auto-detected from Discord.
@@ -123,7 +195,10 @@ async function runCommand(line: string): Promise<string> {
             }
 
             // e.g. "ptt-key F13" or "ptt-key control+shift+alt+p"
-            const parts = arg.split("+").map(part => part.trim()).filter(Boolean);
+            const parts = arg
+                .split("+")
+                .map(part => part.trim())
+                .filter(Boolean);
             const MODIFIER_NAMES: Record<string, string> = {
                 ctrl: "control",
                 control: "control",
@@ -147,21 +222,6 @@ async function runCommand(line: string): Promise<string> {
         }
         case "ptt-debug":
             return JSON.stringify(await sendRendererCommand(IpcCommands.PTT_DEBUG), null, 2);
-        case "ptt-force-down":
-            await sendRendererCommand(IpcCommands.PTT, { active: true });
-            return "ok";
-        case "ptt-force-up":
-            await sendRendererCommand(IpcCommands.PTT, { active: false });
-            return "ok";
-        case "mute":
-            await sendRendererCommand(IpcCommands.SELF_MUTE, { muted: true });
-            return "ok";
-        case "unmute":
-            await sendRendererCommand(IpcCommands.SELF_MUTE, { muted: false });
-            return "ok";
-        case "toggle-mute":
-            await sendRendererCommand(IpcCommands.SELF_MUTE, {});
-            return "ok";
         default:
             throw new Error(`unknown command: ${command}`);
     }
@@ -184,12 +244,14 @@ export function startRpcServer() {
         // clients (`nc -N`, which exits right after sending) and clients that
         // wait for the response (plain `nc`, which exits when we close).
         conn.on("data", data => {
-            conn.on("data", () => { /* ignore any further data on this one-shot connection */ });
+            conn.on("data", () => {
+                /* ignore any further data on this one-shot connection */
+            });
             void (async () => {
                 for (const line of data.toString().split("\n")) {
                     if (!line.trim()) continue;
                     try {
-                        conn.write(await runCommand(line.trim()) + "\n");
+                        conn.write((await runCommand(line.trim())) + "\n");
                     } catch (err: any) {
                         conn.write(`err: ${err?.message ?? String(err)}\n`);
                     }
@@ -197,7 +259,9 @@ export function startRpcServer() {
                 conn.end();
             })();
         });
-        conn.on("error", () => { /* client went away; nothing to do */ });
+        conn.on("error", () => {
+            /* client went away; nothing to do */
+        });
     });
 
     server.on("error", err => console.error("[vesktop-rpc] server error:", err));
@@ -205,7 +269,7 @@ export function startRpcServer() {
     server.listen(socketPath, () => {
         try {
             chmodSync(socketPath, 0o600);
-        } catch { }
+        } catch {}
         console.log(`[vesktop-rpc] listening on ${socketPath}`);
     });
 

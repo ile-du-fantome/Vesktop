@@ -89,5 +89,6 @@ export const enum IpcCommands {
 
     SELF_MUTE = "voice:self-mute",
     PTT = "voice:ptt",
-    PTT_DEBUG = "voice:debug"
+    PTT_DEBUG = "voice:debug",
+    KEY_BINDS_HANDLE = "keyBinds:handle"
 }

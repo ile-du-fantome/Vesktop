@@ -104,7 +104,7 @@ export const VesktopNative = {
         launchWebrtcInternals: () => invoke<void>(IpcEvents.DEBUG_LAUNCH_WEBRTC_INTERNALS)
     },
     ptt: {
-        reportShortcut: (shortcut: { keyCode: string; modifiers: string[]; } | null) =>
+        reportShortcut: (shortcut: { keyCode: string; modifiers: string[] } | null) =>
             invoke<void>(IpcEvents.SET_PTT_KEY, shortcut)
     },
     commands: {

@@ -34,15 +34,17 @@ interface MediaEngineLike {
 
 interface MediaEngineStoreLike {
     isSelfMute(): boolean;
-    getModeOptions(): { shortcut?: unknown; };
+    getModeOptions(): { shortcut?: unknown };
     addChangeListener(cb: () => void): void;
     getMediaEngine(): MediaEngineLike;
 }
 
 function asMediaEngineStore(value: any): MediaEngineStoreLike | null {
-    if (typeof value?.isSelfMute === "function"
-        && typeof value?.getModeOptions === "function"
-        && typeof value?.addChangeListener === "function")
+    if (
+        typeof value?.isSelfMute === "function" &&
+        typeof value?.getModeOptions === "function" &&
+        typeof value?.addChangeListener === "function"
+    )
         return value;
     return null;
 }
@@ -53,7 +55,7 @@ function extractMediaEngineStore(moduleExports: any): MediaEngineStoreLike | nul
         try {
             const store = asMediaEngineStore(moduleExports[key]);
             if (store) return store;
-        } catch { }
+        } catch {}
     }
     return null;
 }
@@ -66,24 +68,30 @@ function getMediaEngineStore(): MediaEngineStoreLike {
         mediaEngineStore = found ? extractMediaEngineStore(found) : null;
     }
     if (!mediaEngineStore)
-        throw new Error("Discord's media engine store is not loaded yet; " +
-            "join a voice channel (or open Discord's voice settings) once and try again");
+        throw new Error(
+            "Discord's media engine store is not loaded yet; " +
+                "join a voice channel (or open Discord's voice settings) once and try again"
+        );
     return mediaEngineStore;
 }
 
 // Wait for the store module to be (lazy-)loaded by Discord's webpack, then
 // keep the reported PTT shortcut up to date with the store's change events.
-waitFor(moduleExports => extractMediaEngineStore(moduleExports) != null, (moduleExports: any) => {
-    const store = extractMediaEngineStore(moduleExports);
-    if (!store || store === mediaEngineStore) return;
-    mediaEngineStore = store;
-    reportPttShortcut();
-    store.addChangeListener(reportPttShortcut);
-});
+waitFor(
+    moduleExports => extractMediaEngineStore(moduleExports) != null,
+    (moduleExports: any) => {
+        const store = extractMediaEngineStore(moduleExports);
+        if (!store || store === mediaEngineStore) return;
+        mediaEngineStore = store;
+        reportPttShortcut();
+        store.addChangeListener(reportPttShortcut);
+    }
+);
 
 /**
  * Report the push-to-talk keybind Discord is configured with to the main
- * process, which caches it for the RPC socket's ptt-down/ptt-up commands.
+ * process, which caches it for the RPC socket's pushToTalkKeyStart/Stop
+ * actions.
  *
  * The shortcut is read from MediaEngineStore.getModeOptions().shortcut.
  * Discord stores keybind keys as [deviceType, keyCode] pairs where keyCode is
@@ -166,7 +174,7 @@ function legacyKeyCodeToElectron(code: number): string | null {
     return NAMED_KEYCODES[code] ?? null;
 }
 
-function toElectronShortcut(shortcut: unknown): { keyCode: string; modifiers: string[]; } | null {
+function toElectronShortcut(shortcut: unknown): { keyCode: string; modifiers: string[] } | null {
     const keys: (string | number)[] = [];
     const collect = (value: unknown) => {
         if (typeof value === "string" || typeof value === "number") {
@@ -227,7 +235,8 @@ onIpcCommand(IpcCommands.PTT, (data?: { active?: boolean; reportKey?: boolean })
         reportPttShortcut();
         return;
     }
-    getMediaEngineStore().getMediaEngine()
+    getMediaEngineStore()
+        .getMediaEngine()
         .eachConnection(conn => conn.setForceAudioInput(!!data?.active));
 });
 
@@ -278,7 +287,7 @@ onIpcCommand(IpcCommands.PTT_DEBUG, () => {
                         });
                         if (nearMisses.length >= 5) break outer;
                     }
-                } catch { }
+                } catch {}
             }
         }
         result.nearMisses = nearMisses;
