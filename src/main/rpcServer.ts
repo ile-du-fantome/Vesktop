@@ -4,11 +4,12 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { app } from "electron";
 import { chmodSync, rmSync } from "fs";
 import { createServer, Server } from "net";
 import { tmpdir } from "os";
 import { join } from "path";
+
+import { app } from "electron";
 import { IpcCommands, IpcEvents } from "shared/IpcEvents";
 
 import { appReady } from "./events";
@@ -32,7 +33,12 @@ import { handle } from "./utils/ipcWrappers";
  *                                synthesize a trusted keyDown/keyUp of the PTT
  *                                key Discord is configured with (reported by
  *                                the renderer), driving Discord's own
- *                                push-to-talk handling
+ *                                push-to-talk handling. Falls back to
+ *                                pushToTalkNormal* if the key is unknown.
+ *                                Note: "ok" means the action was dispatched,
+ *                                not that Discord acted on it. Discord's web
+ *                                keybind layer ignores some keys it lets you
+ *                                configure (F13-F24 for example).
  *   pushToTalkNormalStart / pushToTalkNormalStop / pushToTalkNormalToggle
  *                                invoke Discord's global PTT keybind action
  *                                directly, without synthesizing a key
@@ -69,6 +75,7 @@ interface PttShortcut {
  * over the renderer's reports.
  */
 let pttShortcut: PttShortcut | null = State.store.pttKeyOverride ?? null;
+let warnedMissingPttKey = false;
 
 let server: Server | null = null;
 
@@ -100,6 +107,7 @@ handle(IpcEvents.SET_PTT_KEY, (_e, shortcut: PttShortcut | null) => {
     // A manual `ptt-key` override takes precedence over the renderer's report.
     if (State.store.pttKeyOverride != null) return;
     pttShortcut = shortcut;
+    if (shortcut) warnedMissingPttKey = false;
     console.log(
         "[vesktop-rpc] push-to-talk key:",
         shortcut ? [...shortcut.modifiers, shortcut.keyCode].join("+") : "(none)"
@@ -109,11 +117,22 @@ handle(IpcEvents.SET_PTT_KEY, (_e, shortcut: PttShortcut | null) => {
 async function sendPttKey(down: boolean) {
     await appReady;
 
-    if (!pttShortcut)
-        throw new Error(
-            "Discord's push-to-talk keybind is not known. Configure a push-to-talk keybind in " +
-                "Discord's settings, or set one manually with the `ptt-key` command."
+    if (!pttShortcut) {
+        if (!warnedMissingPttKey) {
+            warnedMissingPttKey = true;
+            console.warn(
+                "[vesktop-rpc] Discord's push-to-talk keybind is not known; " +
+                    "falling back to Discord's PTT action. Configure a PTT keybind or use `ptt-key` to avoid this."
+            );
+        }
+
+        await sendRendererCommand(
+            IpcCommands.KEY_BINDS_HANDLE,
+            down ? "pushToTalkNormalStart" : "pushToTalkNormalStop"
         );
+        return;
+    }
+
     if (!mainWin || mainWin.isDestroyed()) throw new Error("main window is not available");
 
     mainWin.webContents.sendInputEvent({
@@ -123,7 +142,7 @@ async function sendPttKey(down: boolean) {
     });
 }
 
-async function runAction(action: string): Promise<void> {
+export async function runAction(action: string): Promise<void> {
     if (!ACTION_NAMES.has(action)) throw new Error(`unknown action: ${action}`);
 
     await appReady;
@@ -190,6 +209,7 @@ async function runCommand(line: string): Promise<string> {
             if (arg === "auto" || arg === "clear") {
                 State.store.pttKeyOverride = null;
                 pttShortcut = null;
+                warnedMissingPttKey = false;
                 await sendRendererCommand(IpcCommands.PTT, { reportKey: true });
                 return "ok";
             }
@@ -218,6 +238,7 @@ async function runCommand(line: string): Promise<string> {
             }
             pttShortcut = { keyCode, modifiers };
             State.store.pttKeyOverride = pttShortcut;
+            warnedMissingPttKey = false;
             return "ok";
         }
         case "ptt-debug":

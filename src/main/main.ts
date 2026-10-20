@@ -12,11 +12,13 @@ import "./userAssets";
 import "./vesktopProtocol";
 import { app, BrowserWindow, nativeTheme } from "electron";
 
+// eslint-disable-next-line no-duplicate-imports
+import { CommandLine } from "./cli";
 import { DATA_DIR } from "./constants";
 import { createFirstLaunchTour } from "./firstLaunch";
 import { createWindows, mainWin, openDeepLink } from "./mainWindow";
 import { registerMediaPermissionsHandler } from "./mediaPermissions";
-import { startRpcServer } from "./rpcServer";
+import { runAction, startRpcServer } from "./rpcServer";
 import { registerScreenShareHandler } from "./screenShare";
 import { Settings, State } from "./settings";
 import { setAsDefaultProtocolClient } from "./utils/setAsDefaultProtocolClient";
@@ -31,6 +33,12 @@ process.env.VENCORD_USER_DATA_DIR = DATA_DIR;
 const isLinux = process.platform === "linux";
 
 export let enableHardwareAcceleration = true;
+
+function runShortcutAction(action: unknown) {
+    if (typeof action !== "string" || !action) return;
+
+    void runAction(action).catch(err => console.error("[vesktop-rpc] run-shortcut failed:", err));
+}
 
 function init() {
     setAsDefaultProtocolClient("discord");
@@ -99,6 +107,13 @@ function init() {
 
     app.on("second-instance", (_event, cmdLine, _cwd, data: any) => {
         if (data?.IS_DEV) return app.quit();
+
+        const shortcut = data?.args?.values["run-shortcut"];
+        if (shortcut) {
+            runShortcutAction(shortcut);
+            return;
+        }
+
         if (!mainWin) return;
 
         const deepLink = cmdLine.find(arg => arg.startsWith("discord://"));
@@ -113,6 +128,7 @@ function init() {
         registerScreenShareHandler();
         registerMediaPermissionsHandler();
         startRpcServer();
+        runShortcutAction(CommandLine.values["run-shortcut"]);
 
         bootstrap();
 
@@ -122,7 +138,7 @@ function init() {
     });
 }
 
-if (!app.requestSingleInstanceLock({ IS_DEV })) {
+if (!app.requestSingleInstanceLock({ IS_DEV, args: CommandLine })) {
     if (IS_DEV) {
         console.log("Vesktop is already running. Quitting previous instance...");
         init();

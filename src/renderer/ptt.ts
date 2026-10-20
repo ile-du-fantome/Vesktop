@@ -95,9 +95,13 @@ waitFor(
  *
  * The shortcut is read from MediaEngineStore.getModeOptions().shortcut.
  * Discord stores keybind keys as [deviceType, keyCode] pairs where keyCode is
- * the legacy DOM keyCode (Ctrl=17, Shift=16, Alt=18, letters=65..90,
- * F1-F24=112..135; F13=124 is displayed as "UNK124" by Discord's keybind UI).
- * Plain strings (KeyboardEvent.code style) are also accepted, just in case.
+ * the legacy DOM keyCode. Plain strings (KeyboardEvent.code style) are also
+ * accepted, just in case.
+ *
+ * Note: Discord's web keybind handler does not act on some keys it accepts in
+ * its keybind UI (F13-F24 on Linux for example). The reported shortcut is
+ * still correct, but synthesizing it will not activate PTT. Use the
+ * pushToTalkNormal* actions for those keys.
  */
 let lastReported: string | null = null;
 
