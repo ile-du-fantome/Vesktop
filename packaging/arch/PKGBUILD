@@ -1,0 +1,61 @@
+pkgname=vesktop-ptt-git
+pkgver=1.6.7
+pkgrel=1
+pkgdesc="Vesktop with an external push-to-talk control socket"
+arch=("x86_64" "aarch64")
+url="https://github.com/ile-du-fantome/Vesktop"
+license=('GPL-3.0-or-later')
+depends=('alsa-lib' 'gtk3' 'nss' 'netcat')
+makedepends=('git' 'pnpm' 'npm' 'nodejs' 'pkgconf' 'glib2' 'python')
+optdepends=(
+  'libnotify: Notifications'
+  'xdg-utils: Open links, files, etc'
+)
+provides=('vesktop-ptt' 'vesktop')
+conflicts=('vesktop-ptt' 'vesktop' 'vesktop-bin' 'vencord-desktop')
+
+source=(
+  "Vesktop::git+https://github.com/ile-du-fantome/Vesktop.git#branch=ptt"
+  "vesktop.desktop"
+  "vesktop.sh"
+)
+sha256sums=(
+  'SKIP'
+  '98fa8f661b065c2d825e24f0055a40ae01d58d23628ad7ebf6914296209dd43c'
+  '506c246328af639d6f6a3e52215c7b34af2a6df11d195de6f57a8bbee750cce9'
+)
+
+pkgver() {
+  cd Vesktop
+
+  printf '%s.r%s.g%s' \
+    "$(node -p "require('./package.json').version")" \
+    "$(git rev-list --count HEAD)" \
+    "$(git rev-parse --short HEAD)"
+}
+
+build() {
+  cd Vesktop
+
+  pnpm i --frozen-lockfile
+  pnpm package:dir
+}
+
+package() {
+  cd Vesktop
+
+  install -d "$pkgdir/usr/lib/vesktop"
+  install -d "$pkgdir/usr/bin"
+
+  case "${CARCH}" in
+    "aarch64") folder="linux-arm64-unpacked" ;;
+    *) folder="linux-unpacked" ;;
+  esac
+
+  cp -R "dist/${folder}/." "$pkgdir/usr/lib/vesktop"
+
+  install -Dm644 "../vesktop.desktop" "$pkgdir/usr/share/applications/vesktop.desktop"
+  install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 "build/icon.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/vesktop.svg"
+  install -Dm755 "../vesktop.sh" "$pkgdir/usr/bin/vesktop"
+}
