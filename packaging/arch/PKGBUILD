@@ -1,5 +1,5 @@
 pkgname=vesktop-ptt-git
-pkgver=1.6.7
+pkgver=1.6.8
 pkgrel=1
 pkgdesc="Vesktop with an external push-to-talk control socket"
 arch=("x86_64" "aarch64")
