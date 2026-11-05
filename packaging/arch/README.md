@@ -12,8 +12,8 @@ makepkg -si
 ```
 
 The package depends on `netcat` because the PTT integration uses `nc -U` to
-send commands to the control socket. It also needs `pnpm`, `npm`, `nodejs`,
-`git`, `pkgconf`, `glib2`, and `python` at build time.
+send commands to the control socket. It also needs `pnpm >= 11`, `npm`,
+`nodejs >= 22`, `git`, `pkgconf`, `glib2`, and `python` at build time.
 
 To pick up a newer `ptt` commit after the package is already installed:
 

@@ -6,7 +6,7 @@ arch=("x86_64" "aarch64")
 url="https://github.com/ile-du-fantome/Vesktop"
 license=('GPL-3.0-or-later')
 depends=('alsa-lib' 'gtk3' 'nss' 'netcat')
-makedepends=('git' 'pnpm' 'npm' 'nodejs' 'pkgconf' 'glib2' 'python')
+makedepends=('git' 'pnpm>=11' 'npm' 'nodejs>=22' 'pkgconf' 'glib2' 'python')
 optdepends=(
   'libnotify: Notifications'
   'xdg-utils: Open links, files, etc'
