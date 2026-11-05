@@ -65,8 +65,10 @@
       });
 
       # The pnpm fixed-output hash in package.nix needs to be updated when
-      # pnpm-lock.yaml changes. This app rewrites the hash from the build
-      # failure's "got: sha256-..." line. Run with: nix run .#update
+      # pnpm-lock.yaml changes. A stale hash can be reused from the store, so the
+      # build may fail with ERR_PNPM_NO_OFFLINE_TARBALL instead of a hash mismatch.
+      # This app blanks the hash to force Nix to recompute the dependency store,
+      # then writes the "got: sha256-..." value back. Run with: nix run .#update
       apps = forAllSystems (pkgs: {
         update = {
           type = "app";
@@ -77,6 +79,18 @@
               buildLog=$(${pkgs.coreutils}/bin/mktemp)
               trap '${pkgs.coreutils}/bin/rm -f "$buildLog"' EXIT
 
+              oldHash=$(${pkgs.gnugrep}/bin/grep -oP 'hash = "\K[^"]+' package.nix | ${pkgs.coreutils}/bin/head -n1 || true)
+
+              getHash() {
+                ${pkgs.gnugrep}/bin/grep -oP 'got:\s*\Ksha256-[A-Za-z0-9+/=]+' "$buildLog" | ${pkgs.coreutils}/bin/tail -n1 || true
+              }
+
+              restoreHash() {
+                ${pkgs.gnused}/bin/sed -i \
+                  "s|hash = \"[^\"]*\";|hash = \"$oldHash\";|" \
+                  package.nix
+              }
+
               # Stream output through tee so progress stays visible while the
               # log is still captured for the hash grep below. pipefail makes
               # the `if` test nix exit status even though tee always exits 0
@@ -85,17 +99,35 @@
                 exit 0
               fi
 
-              hash=$(${pkgs.gnugrep}/bin/grep -oP 'got:\s*\Ksha256-[A-Za-z0-9+/=]+' "$buildLog" | ${pkgs.coreutils}/bin/tail -n1 || true)
+              hash=$(getHash)
+
+              if [ -z "$hash" ]; then
+                # No hash mismatch means Nix reused the stale fixed-output store.
+                # Force a fresh fetchPnpmDeps build by blanking the hash.
+                echo "No hash mismatch found; recomputing pnpmDeps from an empty hash..." >&2
+                ${pkgs.gnused}/bin/sed -i \
+                  's|hash = "[^\"]*";|hash = "";|' \
+                  package.nix
+
+                if ${pkgs.nix}/bin/nix build "$PWD#vesktop" --no-link 2>&1 | ${pkgs.coreutils}/bin/tee "$buildLog"; then
+                  echo "Error: build succeeded with an empty hash; cannot determine pnpmDeps hash" >&2
+                  restoreHash
+                  exit 1
+                fi
+
+                hash=$(getHash)
+              fi
 
               if [ -z "$hash" ]; then
                 echo "Error: build failed without a pnpm dependency hash mismatch:" >&2
                 ${pkgs.coreutils}/bin/cat "$buildLog" >&2
+                restoreHash
                 exit 1
               fi
 
               echo "Updating pnpmDeps hash: $hash"
               ${pkgs.gnused}/bin/sed -i \
-                "s|hash = \"sha256-[^\"]*\";|hash = \"$hash\";|" \
+                "s|hash = \"[^\"]*\";|hash = \"$hash\";|" \
                 package.nix
 
               echo "Verifying build..."

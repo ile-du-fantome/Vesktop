@@ -26,7 +26,7 @@ let
     pnpm = pnpm_11;
     fetcherVersion = 4;
     # Run `nix run .#update` to recompute hash when pnpm-lock.yaml changes
-    hash = "sha256-7wzkmGaXx1t43zNAWsocKJy12ib9CUoDNN3d9unoahg=";
+    hash = "sha256-AfuvzlPsJRUDznyr2Nlag7z9QiIxa8AaWd8BFpnzNYo=";
   };
 in
 stdenv.mkDerivation (finalAttrs: {
